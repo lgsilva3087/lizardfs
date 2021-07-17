@@ -83,6 +83,22 @@ static void open(const Context &ctx, FileInfo *fi) {
 }
 } // InodeOplog
 
+namespace InodeHelloWorld {
+static void open(const Context &ctx, FileInfo *fi) {
+	if ((fi->flags & O_ACCMODE) != O_RDONLY) {
+		oplog_printf(ctx, "open (%lu) (internal node: OPLOG): %s",
+					(unsigned long int)inode_,
+					lizardfs_error_string(LIZARDFS_ERROR_EACCES));
+		throw RequestException(LIZARDFS_ERROR_EACCES);
+	}
+	fi->fh = 0;
+	fi->direct_io = 1;
+	fi->keep_cache = 0;
+	oplog_printf(ctx, "open (%lu) (internal node: HELLO_WORLD): OK (1,0)",
+				(unsigned long int)inode_);
+}
+} // InodeHelloWorld
+
 namespace InodeOphistory {
 static void open(const Context &ctx, FileInfo *fi) {
 	if ((fi->flags & O_ACCMODE) != O_RDONLY) {
@@ -120,7 +136,7 @@ static const std::array<std::function<void
 	 nullptr,                       //0x6U
 	 nullptr,                       //0x7U
 	 nullptr,                       //0x8U
-	 nullptr,                       //0x9U
+	 &InodeHelloWorld::open,        //0x9U
 	 nullptr,                       //0xAU
 	 nullptr,                       //0xBU
 	 nullptr,                       //0xCU

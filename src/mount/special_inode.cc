@@ -58,3 +58,8 @@ const Inode InodeTweaks::inode_ = SPECIAL_INODE_TWEAKS;
 const Attributes InodeFileByInode::attr =
 	  {{'d', 0x01,0xED, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,1, 0,0,0,0,0,0,0,0}};
 const Inode InodeFileByInode::inode_ = SPECIAL_INODE_FILE_BY_INODE;
+
+// 0x0124 == 0b100100100 == 0444
+const Attributes InodeHelloWorld::attr =
+	  {{'f', 0x01,0x24, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,1, 0,0,0,0,0,0,0,0}};
+const Inode InodeHelloWorld::inode_ = SPECIAL_INODE_HELLO_WORLD;

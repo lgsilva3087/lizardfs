@@ -65,6 +65,11 @@ namespace InodeFileByInode {
 	extern const LizardClient::Inode inode_;
 }
 
+namespace InodeHelloWorld{
+	extern const Attributes attr;
+	extern const LizardClient::Inode inode_;
+}
+
 std::vector<uint8_t> special_read(LizardClient::Inode ino, const LizardClient::Context &ctx,
 	                          size_t size, off_t off, LizardClient::FileInfo *fi, int debug_mode);
 

@@ -132,6 +132,29 @@ static std::vector<uint8_t> read(const Context &ctx,
 }
 } // InodeOplog
 
+namespace InodeHelloWorld {
+
+const char *helloMessage = "Hello world!\n";
+const uint32_t ssize = strlen(helloMessage);
+
+static std::vector<uint8_t> read(const Context &ctx,
+		size_t size, off_t off, FileInfo *fi, int debug_mode) {
+	if (debug_mode) {
+		printDebugReadInfo(ctx, SPECIAL_INODE_HELLO_WORLD, size, off);
+	}
+
+	(void) fi;
+	uint8_t buff[14];
+
+	if(off < ssize) {
+		memcpy(buff, helloMessage, ssize);
+		return std::vector<uint8_t>(buff, buff + ssize);
+	}
+
+	return std::vector<uint8_t>();
+}
+} // InodeHelloWorld
+
 namespace InodeOphistory {
 static std::vector<uint8_t> read(const Context &ctx,
 		size_t size, off_t off, FileInfo *fi, int debug_mode) {
@@ -190,7 +213,7 @@ static const std::array<std::function<std::vector<uint8_t>
 	 nullptr,                       //0x6U
 	 nullptr,                       //0x7U
 	 nullptr,                       //0x8U
-	 nullptr,                       //0x9U
+	 &InodeHelloWorld::read,        //0x9U
 	 nullptr,                       //0xAU
 	 nullptr,                       //0xBU
 	 nullptr,                       //0xCU

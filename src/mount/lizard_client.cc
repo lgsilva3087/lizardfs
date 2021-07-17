@@ -190,6 +190,8 @@ Inode getSpecialInodeByName(const char *name) {
 		return SPECIAL_INODE_OPHISTORY;
 	} else if (strcmp(name, SPECIAL_FILE_NAME_FILE_BY_INODE) == 0) {
 		return SPECIAL_INODE_FILE_BY_INODE;
+	} else if (strcmp(name, SPECIAL_FILE_NAME_HELLO_WORLD) == 0) {
+		return SPECIAL_INODE_HELLO_WORLD;
 	} else {
 		return MAX_REGULAR_INODE;
 	}
