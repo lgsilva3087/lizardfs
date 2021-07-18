@@ -133,6 +133,7 @@ static std::vector<uint8_t> read(const Context &ctx,
 } // InodeOplog
 
 namespace InodeHelloWorld {
+#define UNUSED(x) (void)x;
 
 const char *helloMessage = "Hello world!\n";
 const uint32_t ssize = strlen(helloMessage);
@@ -143,12 +144,12 @@ static std::vector<uint8_t> read(const Context &ctx,
 		printDebugReadInfo(ctx, SPECIAL_INODE_HELLO_WORLD, size, off);
 	}
 
-	(void) fi;
-	uint8_t buff[14];
+	UNUSED(fi);
+	std::vector<uint8_t> buf(helloMessage, helloMessage + ssize);
 
-	if(off < ssize) {
-		memcpy(buff, helloMessage, ssize);
-		return std::vector<uint8_t>(buff, buff + ssize);
+	if (off < ssize) {
+		memcpy(buf.data(), helloMessage, ssize);
+		return std::vector<uint8_t>(helloMessage, helloMessage + ssize);
 	}
 
 	return std::vector<uint8_t>();
