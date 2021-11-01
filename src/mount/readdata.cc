@@ -59,7 +59,6 @@ struct readrec {
 	ChunkReader reader;
 	ReadCache cache;
 	ReadaheadAdviser readahead_adviser;
-	std::vector<uint8_t> read_buffer;
 	uint32_t inode;
 	uint8_t refreshCounter;         // gMutex
 	bool expired;                   // gMutex
@@ -112,7 +111,7 @@ bool read_data_get_prefetchxorstripes() {
 
 inline void clear_readrec_inode_map()
 {
-	for(auto& it : readrec_inode_map) {
+	for (auto& it : readrec_inode_map) {
 		delete it.second;
 	}
 
@@ -146,6 +145,7 @@ void* read_data_delayed_ops(void *arg) {
 }
 
 void* read_data_new(uint32_t inode) {
+	fprintf(stdout, "read_data_new: inode: %d\n", inode);
 	readrec *rrec = new readrec(inode, gChunkConnector, gBandwidthOveruse);
 	std::unique_lock<std::mutex> lock(gMutex);
 
@@ -156,6 +156,7 @@ void* read_data_new(uint32_t inode) {
 
 void read_data_end(void* rr) {
 	readrec *rrec = (readrec*)rr;
+	fprintf(stdout, "read_data_end: inode: %d\n", rrec->inode);
 
 	std::unique_lock<std::mutex> lock(gMutex);
 	rrec->expired = true;
@@ -170,6 +171,7 @@ void read_data_init(uint32_t retries,
 		uint32_t readahead_max_window_size_kB,
 		bool prefetchXorStripes,
 		double bandwidth_overuse) {
+	fprintf(stdout, "read_data_init\n");
 	pthread_attr_t thattr;
 
 	readDataTerminate = false;
@@ -207,7 +209,11 @@ void read_data_init(uint32_t retries,
 	gTweaks.registerVariable("ReqFinishedUsingAll", ReadPlanExecutor::executions_finished_by_additional_operations_);
 }
 
+#include <common/executor_profiler.h>
+
 void read_data_term(void) {
+	fprintf(stdout, "read_data_term\n");
+
 	{
 		std::unique_lock<std::mutex> lock(gMutex);
 		readDataTerminate = true;
@@ -217,9 +223,12 @@ void read_data_term(void) {
 
 	std::unique_lock<std::mutex> lock(gMutex);
 	clear_readrec_inode_map();
+
+	ExecutorProfiler::instance()->printReads();
 }
 
 void read_inode_ops(uint32_t inode) { // attributes of inode have been changed - force reconnect and clear cache
+	fprintf(stdout, "read_inode_ops\n");
 	std::unique_lock<std::mutex> lock(gMutex);
 
 	auto range = readrec_inode_map.equal_range(inode);
@@ -318,6 +327,7 @@ static int read_to_buffer(readrec *rrec, uint64_t current_offset, uint64_t bytes
 			if (try_counter > maxRetries) {
 				return LIZARDFS_ERROR_IO;
 			} else {
+				fprintf(stdout, "USLEEP: %ld\n", sleep_timeout.remaining_us());
 				usleep(sleep_timeout.remaining_us());
 				sleep_time_ms = read_data_sleep_time_ms(try_counter);
 			}

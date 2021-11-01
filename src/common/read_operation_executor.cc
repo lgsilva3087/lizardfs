@@ -89,7 +89,7 @@ void ReadOperationExecutor::continueReading() {
 		|| state_ == kReceivingReadStatusMessage
 		|| state_ == kReceivingReadDataMessage
 		|| state_ == kReceivingDataBlock);
-
+	//fprintf(stdout, "     tcprecv: %d\n", gettid());
 	ssize_t readBytes = tcprecv(fd_, destination_, bytesLeft_);
 	if (readBytes == 0) {
 		throw ChunkserverConnectionException(
@@ -122,6 +122,7 @@ void ReadOperationExecutor::continueReading() {
 			massert(false, "Unknown state in ReadOperationExecutor::continueReading");
 			break;
 	}
+	//fprintf(stdout, "       tcprecv out: %d\n", gettid());
 }
 
 void ReadOperationExecutor::readAll(const Timeout& timeout) {

@@ -77,7 +77,7 @@ public:
 	 * \return suggested readahead window size
 	 */
 	int window() const {
-		return std::min(window_, max_window_size_);
+		return std::max(window_, max_window_size_);
 	}
 
 private:

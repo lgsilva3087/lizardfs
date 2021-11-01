@@ -45,7 +45,8 @@ ReadPlanExecutor::ReadPlanExecutor(ChunkserverStats &chunkserver_stats, uint64_t
 	: stats_(chunkserver_stats),
 	  chunk_id_(chunk_id),
 	  chunk_version_(chunk_version),
-	  plan_(std::move(plan)) {
+	  plan_(std::move(plan)),
+	  wave_timeout(Timeout(std::chrono::milliseconds(0))) {
 }
 
 /*! \brief A function which starts single read operation from chunkserver.
@@ -269,8 +270,90 @@ bool ReadPlanExecutor::readSomeData(ExecuteParams &params, const pollfd &poll_fd
 	return true;
 }
 
-/*! \brief Execute read operation (without post-process). */
+/*! \brief Executes parallel read operations (without post-process). */
 void ReadPlanExecutor::executeReadOperations(ExecuteParams &params) {
+	assert(!plan_->read_operations.empty());
+
+	failed_reads = 0;
+	wave = 0;
+
+	// start reads for first wave (index 0)
+	failed_reads = startReadsForWave(params, wave);
+	startPrefetchForWave(params, wave + 1);
+
+	assert((executors_.size() + networking_failures_.size()) > 0);
+
+	// Receive responses
+	LOG_AVG_TILL_END_OF_SCOPE0("ReadPlanExecutor::executeReadOperations#recv");
+
+	wave_timeout = Timeout(std::chrono::milliseconds(params.wave_timeout));
+	//std::vector<pollfd> poll_fds;
+
+	pthread_t producerThread;
+	//pthread_t consumerThread;
+
+	isReadingFinished = false;
+
+	ProducerParams producerParams {this, params};
+
+	pthread_create(&producerThread, NULL, ReadPlanExecutor::producer,
+				   (void*)std::addressof(producerParams));
+
+	while (true) {
+		if (params.total_timeout.expired()) {
+			if (!executors_.empty()) {
+				NetworkAddress offender = executors_.begin()->second.server();
+				throw RecoverableReadException("Chunkserver communication timed out: " +
+				                               offender.toString());
+			}
+			throw RecoverableReadException("Chunkservers communication timed out");
+		}
+
+		/*if (wave_timeout.expired() || failed_reads) {
+			// start next wave
+			executions_with_additional_operations_ += wave == 0;
+			++wave;
+			wave_timeout.reset();
+			failed_reads = startReadsForWave(params, wave);
+			startPrefetchForWave(params, wave + 1);
+		}*/
+
+		if (!waitForData(params, wave_timeout, poll_fds)) {
+			// EINTR occurred - we need to restart poll
+			continue;
+		}
+
+		if (poll_fds.empty()) {
+			// no more executors available, so it is best to start next wave
+			assert(plan_->isFinishingPossible(networking_failures_));
+			++failed_reads;
+			continue;
+		}
+
+		// Process poll's output -- read from chunkservers
+		for (pollfd &poll_fd : poll_fds) {
+			if (poll_fd.revents == 0) {
+				continue;
+			}
+
+			ReadOperationExecutor &executor = executors_.at(poll_fd.fd);
+
+			if (!readSomeData(params, poll_fd, executor)) {
+				++failed_reads;
+			}
+		}
+
+		// Check if we are finished now
+		if (isReadingFinished) {
+			executions_finished_by_additional_operations_ += wave > 0;
+			//pthread_join(producerThread, NULL);
+			break;
+		}
+	}
+}
+
+/*! \brief Execute read operation (without post-process). */
+void ReadPlanExecutor::executeReadOperationsOld(ExecuteParams &params) {
 	assert(!plan_->read_operations.empty());
 
 	int failed_reads;
@@ -293,7 +376,7 @@ void ReadPlanExecutor::executeReadOperations(ExecuteParams &params) {
 			if (!executors_.empty()) {
 				NetworkAddress offender = executors_.begin()->second.server();
 				throw RecoverableReadException("Chunkserver communication timed out: " +
-				                               offender.toString());
+											   offender.toString());
 			}
 			throw RecoverableReadException("Chunkservers communication timed out");
 		}
@@ -338,6 +421,40 @@ void ReadPlanExecutor::executeReadOperations(ExecuteParams &params) {
 			break;
 		}
 	}
+}
+
+void *ReadPlanExecutor::producer(void* args)
+{
+	ProducerParams* producerParams = static_cast<ProducerParams*>(args);
+	ReadPlanExecutor *readPlanExec = producerParams->readPlanExecutor;
+
+	while (true) {
+		//std::unique_lock<std::mutex> lock(readPlanExec->mutex);
+
+		if (readPlanExec->wave_timeout.expired() || readPlanExec->failed_reads) {
+			// start next wave
+			executions_with_additional_operations_ += readPlanExec->wave == 0;
+			++(readPlanExec->wave);
+			readPlanExec->wave_timeout.reset();
+			readPlanExec->failed_reads =
+					readPlanExec->startReadsForWave(producerParams->executeParams,
+													readPlanExec->wave);
+			readPlanExec->startPrefetchForWave(producerParams->executeParams,
+											   readPlanExec->wave + 1);
+		}
+
+		// Check if we are finished now
+		if (readPlanExec->plan_->isReadingFinished(readPlanExec->available_parts_)) {
+			readPlanExec->isReadingFinished = true;
+			break;
+		}
+
+		//usleep(1000);
+	}
+
+	pthread_exit(NULL);
+
+	return 0;
 }
 
 /*! \brief Debug function for checking if plan is valid. */

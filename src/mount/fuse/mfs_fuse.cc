@@ -516,7 +516,16 @@ void mfs_release(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi) {
 	}
 }
 
+#include <common/executor_profiler.h>
+
+//static int thread_flag = 0;
+
 void mfs_read(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off, struct fuse_file_info *fi) {
+	//fprintf(stdout, "Thread: %d, offset: %ld\n", gettid(), off);
+	ExecutorProfiler::instance()->addRead(gettid(), off/*, size*/);
+
+	//int a = ++thread_flag;
+
 	try {
 		auto ctx = get_reduced_context(req);
 		if (LizardClient::isSpecialInode(ino)) {
@@ -534,6 +543,10 @@ void mfs_read(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off, struct fus
 	} catch (LizardClient::RequestException& e) {
 		fuse_reply_err(req, e.system_error_code);
 	}
+	//fprintf(stdout, "   Thread: %d, offset: %ld\n", gettid(), off);
+
+	/*if(a != thread_flag)
+		fprintf(stdout, "******************");*/
 }
 
 void mfs_write(fuse_req_t req, fuse_ino_t ino, const char *buf, size_t size, off_t off,

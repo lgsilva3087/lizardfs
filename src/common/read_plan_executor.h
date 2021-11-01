@@ -98,6 +98,11 @@ protected:
 		const Timeout &total_timeout;
 	};
 
+	struct ProducerParams {
+		ReadPlanExecutor *readPlanExecutor;
+		ExecuteParams &executeParams;
+	};
+
 	void checkPlan(uint8_t *buffer_start);
 
 	bool startReadOperation(ExecuteParams &params, ChunkPartType chunk_type,
@@ -111,6 +116,10 @@ protected:
 	                  ReadOperationExecutor &executor);
 	void executeReadOperations(ExecuteParams &params);
 
+	void executeReadOperationsOld(ExecuteParams &params);
+
+	static void* producer(void* args);
+
 private:
 	ChunkserverStats& stats_;
 	const uint64_t chunk_id_;
@@ -121,4 +130,11 @@ private:
 	ReadPlan::PartsContainer available_parts_;
 	ReadPlan::PartsContainer networking_failures_;
 	NetworkAddress last_connection_failure_;
+
+	Timeout wave_timeout;
+	std::atomic<int> failed_reads;
+	std::atomic<int> wave;
+	std::vector<pollfd> poll_fds;
+	std::atomic<bool> isReadingFinished;
+	std::mutex mutex;
 };

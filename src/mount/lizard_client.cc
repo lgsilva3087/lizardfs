@@ -1996,7 +1996,7 @@ void open(Context &ctx, Inode ino, FileInfo *fi) {
 	if (debug_mode) {
 		lzfs::log_debug("open ({}) ok -> keep cache: {}\n", ino, (int)fi->keep_cache);
 	}
-	fi->direct_io = gDirectIo;
+	fi->direct_io = true;
 	oplog_printf(ctx, "open (%lu): OK (%lu,%lu)",
 			(unsigned long int)ino,
 			(unsigned long int)fi->direct_io,
