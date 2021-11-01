@@ -86,6 +86,7 @@ struct readrec {
 static ConnectionPool gReadConnectionPool;
 static ChunkConnectorUsingPool gChunkConnector(gReadConnectionPool);
 static std::mutex gMutex;
+static std::mutex gFeederMutex;
 static readrec *rdinodemap[MAPSIZE];
 static readrec *rdhead=NULL;
 static pthread_t delayedOpsThread;
@@ -343,6 +344,18 @@ static int read_to_buffer(readrec *rrec, uint64_t current_offset, uint64_t bytes
 	return LIZARDFS_STATUS_OK;
 }
 
+struct FeederParams {
+	readrec *rrec;
+	uint64_t request_offset;
+	uint64_t size;
+
+	FeederParams(readrec *second, uint64_t request_offset, uint64_t size)
+		: rrec(second), request_offset(request_offset), size(size) {
+	}
+};
+
+//static int number = 0;
+
 int read_data(void *rr, uint64_t offset, uint32_t size, ReadCache::Result &ret) {
 	readrec *rrec = (readrec*)rr;
 	assert(size % MFSBLOCKSIZE == 0);
@@ -352,20 +365,38 @@ int read_data(void *rr, uint64_t offset, uint32_t size, ReadCache::Result &ret) 
 		return LIZARDFS_STATUS_OK;
 	}
 
+	std::unique_lock<std::mutex> lock(gFeederMutex);
 	rrec->readahead_adviser.feed(offset, size);
 
 	ReadCache::Result result = rrec->cache.query(offset, size);
 
 	if (result.frontOffset() <= offset && offset + size <= result.endOffset()) {
+		//fprintf(stdout, "CACHE: %d\n", ++number);
 		ret = std::move(result);
 		return LIZARDFS_STATUS_OK;
 	}
+	lock.unlock();
+
+	//fprintf(stdout, "NO CACHE %d\n", ++number);
 	uint64_t request_offset = result.remainingOffset();
 	uint64_t bytes_to_read_left = std::max<uint64_t>(size, rrec->readahead_adviser.window()) - (request_offset - offset);
 	bytes_to_read_left = (bytes_to_read_left + MFSBLOCKSIZE - 1) / MFSBLOCKSIZE * MFSBLOCKSIZE;
 
 	uint64_t bytes_read = 0;
+
+	lock.lock();
 	int err = read_to_buffer(rrec, request_offset, bytes_to_read_left, result.inputBuffer(), &bytes_read);
+	lock.unlock();
+
+	if (bytes_to_read_left > 512) {
+		pthread_t threadId;
+		pthread_create(&threadId, NULL, feed_ahead, (void*)new FeederParams {
+						   rrec,
+						   request_offset + bytes_to_read_left,
+						   bytes_to_read_left
+					   });
+	}
+
 	if (err) {
 		// paranoia check - discard any leftover bytes from incorrect read
 		result.inputBuffer().clear();
@@ -374,4 +405,30 @@ int read_data(void *rr, uint64_t offset, uint32_t size, ReadCache::Result &ret) 
 
 	ret = std::move(result);
 	return LIZARDFS_STATUS_OK;
+}
+
+void* feed_ahead(void *args)
+{
+	for (int i =  0; i < 8; ++i) {
+		//usleep(200);
+		FeederParams* feederParams = (FeederParams *)args;
+		readrec* rrec = feederParams->rrec;
+
+		std::unique_lock<std::mutex> lock(gFeederMutex);
+		auto result = rrec->cache.query(feederParams->request_offset + feederParams->size * i,
+										feederParams->size);
+
+		uint64_t bytes_read = 0;
+		int err = read_to_buffer(rrec, feederParams->request_offset + feederParams->size * i,
+								 feederParams->size,
+								 result.inputBuffer(), &bytes_read);
+		lock.unlock();
+
+		if (err) {
+			result.inputBuffer().clear();
+			fprintf(stdout, "ERROR: %d\n", err);
+		}
+	}
+
+	pthread_exit(NULL);
 }
