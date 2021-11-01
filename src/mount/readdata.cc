@@ -63,6 +63,8 @@ struct readrec {
 	uint32_t inode;
 	uint8_t refreshCounter;         // gMutex
 	bool expired;                   // gMutex
+	struct readrec *second;
+	std::atomic<bool> second_ready;
 
 	readrec(uint32_t inode, ChunkConnector& connector, double bandwidth_overuse)
 			: reader(connector, bandwidth_overuse),
@@ -70,7 +72,20 @@ struct readrec {
 			  readahead_adviser(gCacheExpirationTime_ms, gReadaheadMaxWindowSize),
 			  inode(inode),
 			  refreshCounter(0),
-			  expired(false) {
+			  expired(false),
+			  second_ready(false) {
+	}
+};
+
+struct readrec_second {
+	readrec *rrec;
+	uint64_t request_offset;
+	uint64_t bytes_to_read_left;
+
+	readrec_second(readrec *second, uint64_t request_offset,
+				   uint64_t bytes_to_read_left)
+		: rrec(second), request_offset(request_offset),
+		  bytes_to_read_left(bytes_to_read_left) {
 	}
 };
 
@@ -79,6 +94,9 @@ static ChunkConnectorUsingPool gChunkConnector(gReadConnectionPool);
 static std::mutex gMutex;
 static std::unordered_multimap<uint32_t, readrec*> readrec_inode_map;
 static pthread_t delayedOpsThread;
+static pthread_t secondBufferThread;
+static uint64_t secondBufferOffset = 0;
+static std::mutex gDoubleBufferMutex;
 static std::atomic<uint32_t> gChunkserverConnectTimeout_ms;
 static std::atomic<uint32_t> gChunkserverWaveReadTimeout_ms;
 static std::atomic<uint32_t> gChunkserverTotalReadTimeout_ms;
@@ -147,6 +165,7 @@ void* read_data_delayed_ops(void *arg) {
 
 void* read_data_new(uint32_t inode) {
 	readrec *rrec = new readrec(inode, gChunkConnector, gBandwidthOveruse);
+	rrec->second = new readrec(inode, gChunkConnector, gBandwidthOveruse);
 	std::unique_lock<std::mutex> lock(gMutex);
 
 	readrec_inode_map.emplace(inode, rrec);
@@ -348,8 +367,30 @@ int read_data(void *rr, uint64_t offset, uint32_t size, ReadCache::Result &ret) 
 	uint64_t bytes_to_read_left = std::max<uint64_t>(size, rrec->readahead_adviser.window()) - (request_offset - offset);
 	bytes_to_read_left = (bytes_to_read_left + MFSBLOCKSIZE - 1) / MFSBLOCKSIZE * MFSBLOCKSIZE;
 
+	if (rrec->second->second_ready) {
+		std::unique_lock<std::mutex> lock(gDoubleBufferMutex);
+		if(bytes_to_read_left == rrec->second->read_buffer.size()
+				&& request_offset == secondBufferOffset) {
+			result.inputBuffer() = rrec->second->read_buffer;
+			rrec->second->second_ready = false;
+
+			ret = std::move(result);
+			lock.unlock();
+			return LIZARDFS_STATUS_OK;
+		}
+	}
+
 	uint64_t bytes_read = 0;
 	int err = read_to_buffer(rrec, request_offset, bytes_to_read_left, result.inputBuffer(), &bytes_read);
+
+	//Create new thread to fill the second buffer
+	pthread_create(&secondBufferThread,NULL,read_data_second_buffer,
+				   (void*)new readrec_second {
+					   rrec->second,
+					   request_offset + bytes_to_read_left,
+					   bytes_to_read_left
+				   });
+
 	if (err) {
 		// paranoia check - discard any leftover bytes from incorrect read
 		result.inputBuffer().clear();
@@ -358,4 +399,31 @@ int read_data(void *rr, uint64_t offset, uint32_t size, ReadCache::Result &ret) 
 
 	ret = std::move(result);
 	return LIZARDFS_STATUS_OK;
+}
+
+void* read_data_second_buffer(void *args) {
+	readrec_second* second_data = (readrec_second *)args;
+	readrec* second = second_data->rrec;
+	std::unique_lock<std::mutex> lock(gDoubleBufferMutex);
+	second->read_buffer.clear();
+	secondBufferOffset = second_data->request_offset;
+	lock.unlock();
+
+	uint64_t bytes_read = 0;
+	int err = read_to_buffer(second, second_data->request_offset,
+							 second_data->bytes_to_read_left,
+							 second->read_buffer, &bytes_read);
+
+	delete second_data;
+
+	if (err) {
+		lock.lock();
+		second->read_buffer.clear();
+		lock.unlock();
+		fprintf(stdout, "ERROR: %d\n", err);
+	}
+
+	second->second_ready = true;
+
+	pthread_exit(NULL);
 }
