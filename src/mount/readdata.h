@@ -25,6 +25,8 @@
 #include "mount/chunk_locator.h"
 #include "mount/readdata_cache.h"
 
+struct readrec;
+
 uint32_t read_data_get_wave_read_timeout_ms();
 uint32_t read_data_get_connect_timeout_ms();
 uint32_t read_data_get_total_read_timeout_ms();
@@ -45,3 +47,5 @@ void read_data_init(uint32_t retries,
 		bool prefetchXorStripes,
 		double bandwidth_overuse);
 void read_data_term(void);
+int read_to_buffer(readrec *rrec, uint64_t current_offset, uint64_t bytes_to_read,
+				   std::vector<uint8_t> &read_buffer, uint64_t *bytes_read);

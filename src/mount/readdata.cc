@@ -32,6 +32,7 @@
 #include <condition_variable>
 #include <map>
 #include <mutex>
+#include <queue>
 
 #include "common/connection_pool.h"
 #include "common/datapack.h"
@@ -74,6 +75,21 @@ struct readrec {
 	}
 };
 
+struct ConsumerRequest {
+	readrec *rrec;
+	ReadCache::Result &result;
+	uint64_t request_offset;
+	uint64_t bytes_to_read_left;
+
+	ConsumerRequest(readrec *rrec, ReadCache::Result &result, uint64_t offset,
+					uint64_t bytes_left)
+		: rrec(rrec),
+		  result(result),
+		  request_offset(offset),
+		  bytes_to_read_left(bytes_left) {
+	}
+};
+
 typedef std::unordered_multimap<uint32_t, readrec*> ReadRecords;
 typedef std::pair<ReadRecords::iterator, ReadRecords::iterator> ReadRecordRange;
 
@@ -89,6 +105,14 @@ static std::atomic<bool> gPrefetchXorStripes;
 static bool readDataTerminate;
 static std::atomic<uint32_t> maxRetries;
 static double gBandwidthOveruse;
+
+// producer-consumer
+//static ulong MAX_PRODUCER_RESULTS = 20;
+static pthread_t producerThread;
+static std::mutex gProducerConsumerMutex;
+static std::queue<ConsumerRequest> consumerRequests;
+static std::condition_variable can_produce;
+static std::queue<std::string> producerResults;
 
 const unsigned ReadaheadAdviser::kInitWindowSize;
 const unsigned ReadaheadAdviser::kDefaultWindowSizeLimit;
@@ -150,6 +174,36 @@ void* read_data_delayed_ops(void *arg) {
 	}
 }
 
+void* producer(void *args) {
+	(void)args;
+
+	while (true) {
+		std::unique_lock<std::mutex> lock(gProducerConsumerMutex);
+
+		if (consumerRequests.size()) {
+			ConsumerRequest firstRequest = consumerRequests.front();
+
+			uint64_t bytes_read = 0;
+			int err = read_to_buffer(firstRequest.rrec,
+									 firstRequest.request_offset,
+									 firstRequest.bytes_to_read_left,
+									 firstRequest.result.inputBuffer(), &bytes_read);
+
+			if (err) {
+				firstRequest.result.inputBuffer().clear();
+			}
+
+			consumerRequests.pop();
+			fprintf(stdout, "Produced\n");
+		}
+
+		lock.unlock();
+		usleep(100000);
+	}
+
+	return NULL;
+}
+
 void* read_data_new(uint32_t inode) {
 	readrec *rrec = new readrec(inode, gChunkConnector, gBandwidthOveruse);
 	std::unique_lock<std::mutex> lock(gMutex);
@@ -197,6 +251,13 @@ void read_data_init(uint32_t retries,
 	pthread_create(&delayedOpsThread,&thattr,read_data_delayed_ops,NULL);
 	pthread_attr_destroy(&thattr);
 
+	// producer thread
+	pthread_attr_t producerThreadAttr;
+	pthread_attr_init(&producerThreadAttr);
+	pthread_attr_setstacksize(&producerThreadAttr, 0x100000);
+	pthread_create(&producerThread, &producerThreadAttr, producer, NULL);
+	pthread_attr_destroy(&producerThreadAttr);
+
 	gTweaks.registerVariable("ReadMaxRetries", maxRetries);
 	gTweaks.registerVariable("ReadConnectTimeout", gChunkserverConnectTimeout_ms);
 	gTweaks.registerVariable("ReadWaveTimeout", gChunkserverWaveReadTimeout_ms);
@@ -215,7 +276,8 @@ void read_data_term(void) {
 		readDataTerminate = true;
 	}
 
-	pthread_join(delayedOpsThread,NULL);
+	pthread_join(delayedOpsThread, NULL);
+	pthread_join(producerThread, NULL);
 
 	clear_active_read_records();
 }
@@ -252,7 +314,7 @@ static void print_error_msg(const readrec *rrec, uint32_t try_counter, const Exc
 	}
 }
 
-static int read_to_buffer(readrec *rrec, uint64_t current_offset, uint64_t bytes_to_read,
+int read_to_buffer(readrec *rrec, uint64_t current_offset, uint64_t bytes_to_read,
 		std::vector<uint8_t> &read_buffer, uint64_t *bytes_read) {
 	uint32_t try_counter = 0;
 	uint32_t prepared_inode = 0; // this is always different than any real inode
@@ -337,26 +399,37 @@ int read_data(void *rr, uint64_t offset, uint32_t size, ReadCache::Result &ret) 
 		return LIZARDFS_STATUS_OK;
 	}
 
+	// Check if the cache has data to fullfill this request
 	rrec->readahead_adviser.feed(offset, size);
 
 	ReadCache::Result result = rrec->cache.query(offset, size);
 
 	if (result.frontOffset() <= offset && offset + size <= result.endOffset()) {
+		fprintf(stdout, "FROM CACHE\n");
 		ret = std::move(result);
 		return LIZARDFS_STATUS_OK;
 	}
+
 	uint64_t request_offset = result.remainingOffset();
 	uint64_t bytes_to_read_left = std::max<uint64_t>(size, rrec->readahead_adviser.window()) - (request_offset - offset);
 	bytes_to_read_left = (bytes_to_read_left + MFSBLOCKSIZE - 1) / MFSBLOCKSIZE * MFSBLOCKSIZE;
 
-	uint64_t bytes_read = 0;
-	int err = read_to_buffer(rrec, request_offset, bytes_to_read_left, result.inputBuffer(), &bytes_read);
-	if (err) {
-		// paranoia check - discard any leftover bytes from incorrect read
-		result.inputBuffer().clear();
-		return err;
-	}
+	// Post a new request and wait for it
+	ConsumerRequest request {rrec, result, request_offset, bytes_to_read_left};
+	std::unique_lock<std::mutex> lock(gProducerConsumerMutex);
+	consumerRequests.push(request);
+	lock.unlock();
+	fprintf(stdout, "Consumer request\n");
 
-	ret = std::move(result);
-	return LIZARDFS_STATUS_OK;
+	while (true) {
+		//wait here for producer, add condition variable here
+		usleep(10000);
+
+		std::unique_lock<std::mutex> lock(gProducerConsumerMutex);
+		if (result.frontOffset() <= offset && offset + size <= result.endOffset()) {
+			fprintf(stdout, "FROM CACHE INSIDE WHILE\n");
+			ret = std::move(result);
+			return LIZARDFS_STATUS_OK;
+		}
+	}
 }
