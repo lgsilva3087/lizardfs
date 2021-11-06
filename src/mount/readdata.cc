@@ -112,6 +112,7 @@ static pthread_t producerThread;
 static std::mutex gProducerConsumerMutex;
 static std::queue<ConsumerRequest> consumerRequests;
 static std::condition_variable can_produce;
+static std::condition_variable can_consume;
 static std::queue<std::string> producerResults;
 
 const unsigned ReadaheadAdviser::kInitWindowSize;
@@ -180,28 +181,33 @@ void* producer(void *args) {
 	while (true) {
 		std::unique_lock<std::mutex> lock(gProducerConsumerMutex);
 
-		if (consumerRequests.size()) {
-			ConsumerRequest firstRequest = consumerRequests.front();
+		fprintf(stdout, "Producer before wait\n");
+		can_produce.wait(lock, [](){return consumerRequests.size();});
+		fprintf(stdout, "-Producer after wait. Requests: %lu\n", consumerRequests.size());
 
-			uint64_t bytes_read = 0;
-			int err = read_to_buffer(firstRequest.rrec,
-									 firstRequest.request_offset,
-									 firstRequest.bytes_to_read_left,
-									 firstRequest.result.inputBuffer(), &bytes_read);
+		ConsumerRequest firstRequest = consumerRequests.front();
 
-			if (err) {
-				firstRequest.result.inputBuffer().clear();
-			}
+		fprintf(stdout, "Before read_to_buffer\n");
 
-			consumerRequests.pop();
-			fprintf(stdout, "Produced\n");
+		uint64_t bytes_read = 0;
+		int err = read_to_buffer(firstRequest.rrec,
+								 firstRequest.request_offset,
+								 firstRequest.bytes_to_read_left,
+								 firstRequest.result.inputBuffer(), &bytes_read);
+
+		fprintf(stdout, "After read_to_buffer. Bytes: %lu\n", bytes_read / 1024);
+
+		if (err) {
+			fprintf(stdout, "Error in read_to_buffer\n");
+			firstRequest.result.inputBuffer().clear();
 		}
 
-		lock.unlock();
-		usleep(100000);
-	}
+		consumerRequests.pop();
+		fprintf(stdout, "Produced\n");
 
-	return NULL;
+		lock.unlock();
+		can_consume.notify_one();
+	}
 }
 
 void* read_data_new(uint32_t inode) {
@@ -277,7 +283,7 @@ void read_data_term(void) {
 	}
 
 	pthread_join(delayedOpsThread, NULL);
-	pthread_join(producerThread, NULL);
+	pthread_cancel(producerThread);
 
 	clear_active_read_records();
 }
@@ -419,17 +425,20 @@ int read_data(void *rr, uint64_t offset, uint32_t size, ReadCache::Result &ret) 
 	std::unique_lock<std::mutex> lock(gProducerConsumerMutex);
 	consumerRequests.push(request);
 	lock.unlock();
+	can_produce.notify_one();
 	fprintf(stdout, "Consumer request\n");
 
 	while (true) {
 		//wait here for producer, add condition variable here
-		usleep(10000);
-
 		std::unique_lock<std::mutex> lock(gProducerConsumerMutex);
-		if (result.frontOffset() <= offset && offset + size <= result.endOffset()) {
-			fprintf(stdout, "FROM CACHE INSIDE WHILE\n");
-			ret = std::move(result);
-			return LIZARDFS_STATUS_OK;
-		}
+
+		fprintf(stdout, "Consumer before wait\n");
+		can_consume.wait(lock, [&]{
+			return result.frontOffset() <= offset && offset + size <= result.endOffset();
+		});
+		fprintf(stdout, "Consumer after wait\n");
+
+		ret = std::move(result);
+		return LIZARDFS_STATUS_OK;
 	}
 }
