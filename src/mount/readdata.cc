@@ -76,17 +76,26 @@ struct readrec {
 };
 
 struct ConsumerRequest {
+	u_int64_t id;
 	readrec *rrec;
 	ReadCache::Result &result;
 	uint64_t request_offset;
 	uint64_t bytes_to_read_left;
+	uint64_t bytes_read;
 
-	ConsumerRequest(readrec *rrec, ReadCache::Result &result, uint64_t offset,
-					uint64_t bytes_left)
-		: rrec(rrec),
+	ConsumerRequest(uint64_t id, readrec *rrec, ReadCache::Result &result,
+					uint64_t offset, uint64_t bytes_left)
+		: id(id),
+		  rrec(rrec),
 		  result(result),
 		  request_offset(offset),
-		  bytes_to_read_left(bytes_left) {
+		  bytes_to_read_left(bytes_left),
+		  bytes_read(0) {
+	}
+
+	inline void print() const {
+		fprintf(stdout, "id: %lu, inode: %d, offset: %lu, KB: %lu\n",
+				id, rrec->inode, request_offset, bytes_to_read_left / 1024);
 	}
 };
 
@@ -113,7 +122,7 @@ static std::mutex gProducerConsumerMutex;
 static std::queue<ConsumerRequest> consumerRequests;
 static std::condition_variable can_produce;
 static std::condition_variable can_consume;
-static std::queue<std::string> producerResults;
+static std::queue<ConsumerRequest> producerResults;
 
 const unsigned ReadaheadAdviser::kInitWindowSize;
 const unsigned ReadaheadAdviser::kDefaultWindowSizeLimit;
@@ -181,29 +190,31 @@ void* producer(void *args) {
 	while (true) {
 		std::unique_lock<std::mutex> lock(gProducerConsumerMutex);
 
-		fprintf(stdout, "Producer before wait\n");
+		//fprintf(stdout, "Producer before wait\n");
 		can_produce.wait(lock, [](){return consumerRequests.size();});
-		fprintf(stdout, "-Producer after wait. Requests: %lu\n", consumerRequests.size());
+		//fprintf(stdout, "-Producer after wait. Requests: %lu\n", consumerRequests.size());
 
 		ConsumerRequest firstRequest = consumerRequests.front();
 
-		fprintf(stdout, "Before read_to_buffer\n");
+		//firstRequest.print();
 
-		uint64_t bytes_read = 0;
+		//uint64_t bytes_read = 0;
 		int err = read_to_buffer(firstRequest.rrec,
 								 firstRequest.request_offset,
 								 firstRequest.bytes_to_read_left,
-								 firstRequest.result.inputBuffer(), &bytes_read);
+								 firstRequest.result.inputBuffer(), &firstRequest.bytes_read);
 
-		fprintf(stdout, "After read_to_buffer. Bytes: %lu\n", bytes_read / 1024);
+		//fprintf(stdout, "After read_to_buffer. Bytes: %lu\n",
+		//		firstRequest.bytes_read / 1024);
 
 		if (err) {
 			fprintf(stdout, "Error in read_to_buffer\n");
 			firstRequest.result.inputBuffer().clear();
 		}
 
+		producerResults.push(firstRequest);
 		consumerRequests.pop();
-		fprintf(stdout, "Produced\n");
+		//fprintf(stdout, "Produced\n");
 
 		lock.unlock();
 		can_consume.notify_one();
@@ -411,7 +422,7 @@ int read_data(void *rr, uint64_t offset, uint32_t size, ReadCache::Result &ret) 
 	ReadCache::Result result = rrec->cache.query(offset, size);
 
 	if (result.frontOffset() <= offset && offset + size <= result.endOffset()) {
-		fprintf(stdout, "FROM CACHE\n");
+		//fprintf(stdout, "FROM CACHE\n");
 		ret = std::move(result);
 		return LIZARDFS_STATUS_OK;
 	}
@@ -420,25 +431,32 @@ int read_data(void *rr, uint64_t offset, uint32_t size, ReadCache::Result &ret) 
 	uint64_t bytes_to_read_left = std::max<uint64_t>(size, rrec->readahead_adviser.window()) - (request_offset - offset);
 	bytes_to_read_left = (bytes_to_read_left + MFSBLOCKSIZE - 1) / MFSBLOCKSIZE * MFSBLOCKSIZE;
 
+	uint64_t id = gettid() + request_offset;
 	// Post a new request and wait for it
-	ConsumerRequest request {rrec, result, request_offset, bytes_to_read_left};
+	ConsumerRequest request {id, rrec, result, request_offset, bytes_to_read_left};
 	std::unique_lock<std::mutex> lock(gProducerConsumerMutex);
 	consumerRequests.push(request);
 	lock.unlock();
 	can_produce.notify_one();
-	fprintf(stdout, "Consumer request\n");
+	//fprintf(stdout, "\nNew consumer request\n");
 
 	while (true) {
 		//wait here for producer, add condition variable here
 		std::unique_lock<std::mutex> lock(gProducerConsumerMutex);
 
-		fprintf(stdout, "Consumer before wait\n");
+		//fprintf(stdout, "Consumer before wait\n");
 		can_consume.wait(lock, [&]{
-			return result.frontOffset() <= offset && offset + size <= result.endOffset();
+			return producerResults.size();
 		});
-		fprintf(stdout, "Consumer after wait\n");
+		//fprintf(stdout, "Consumer after wait\n");
 
-		ret = std::move(result);
-		return LIZARDFS_STATUS_OK;
+		if (producerResults.front().id == id) {
+			producerResults.pop();
+
+			ret = std::move(result);
+			return LIZARDFS_STATUS_OK;
+		}
 	}
+
+	return 0;
 }
