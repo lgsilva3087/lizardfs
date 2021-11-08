@@ -426,7 +426,7 @@ int read_data(void *rr, uint64_t offset, uint32_t size, ReadCache::Result &ret) 
 	uint64_t frontOffset = result.frontOffset();
 	uint64_t endOffset = result.endOffset();
 
-	fprintf(stdout, "Cache size: %lu\n", endOffset - frontOffset);
+	fprintf(stdout, "Diff offset: %lu, Size: %d\n", endOffset - offset, size);
 
 	if (frontOffset <= offset && offset + size <= endOffset) {
 		//fprintf(stdout, "FROM CACHE\n");
