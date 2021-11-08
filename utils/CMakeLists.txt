@@ -73,3 +73,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
   target_link_libraries(slow_chunk_scan dl)
 endif()
 install(TARGETS slow_chunk_scan DESTINATION ${LIB_SUBDIR})
+
+# slow file reader with parameters
+add_executable(slow-file-reader slow_file_reader.cc)
+install(TARGETS slow-file-reader RUNTIME DESTINATION ${BIN_SUBDIR})
