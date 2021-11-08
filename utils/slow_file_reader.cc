@@ -16,16 +16,17 @@
    along with LizardFS. If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <iostream>
-#include <fstream>
-#include <regex>
 #include <cmath>
-#include <thread>
+#include <fstream>
+#include <getopt.h>
 #include <iomanip>
+#include <iostream>
 #include <mutex>
+#include <regex>
+#include <thread>
+#include <utility>
 #include <vector>
 
-#include <getopt.h>
 
 struct Options {
 	long chunkSize;
@@ -36,6 +37,7 @@ struct Options {
 	long querySize;
 	double timeoutSeconds;
 	long waitingTimeMilliseconds;
+	std::ostream &statsStream;
 
 	static Options *getInstance() {
 		if (nullptr == instance) {
@@ -46,50 +48,28 @@ struct Options {
 	}
 
 	Options(Options const &) = delete;
+
 	Options(Options &&) = delete;
 
 protected:
 	static Options *instance;
 
 	Options()
-		: chunkSize(64 * 1 << 20 /* 64MiB */), chunksMaxCount(-1),
-		  source("/dev/urandom"), destination("/dev/null"), showProgress(true),
-		  querySize(-1), timeoutSeconds(-1), waitingTimeMilliseconds(0) {
+			: chunkSize(64 * 1 << 20 /* 64MiB */), chunksMaxCount(-1),
+			  source("/dev/urandom"), destination("/dev/null"), showProgress(true),
+			  querySize(-1), timeoutSeconds(-1), waitingTimeMilliseconds(0), statsStream(std::cout) {
 	}
 };
 
 Options *Options::instance = nullptr;
 
-struct Stats {
-	std::ostream &stream;
-
-	static Stats *getInstance(std::ostream &stream) {
-		if (nullptr == instance) {
-			instance = new Stats(stream);
-		}
-		return instance;
-	}
-
-private:
-	static Stats *instance;
-
-	explicit Stats(std::ostream &stream_) : stream(stream_) {};
-
-	Stats(Stats const &, std::ostream &stream) : stream(stream) {};
-
-	Stats(Stats &&, std::ostream &stream) : stream(stream) {};
-
-	virtual ~Stats() {};
-};
-
-Stats *Stats::instance = nullptr;
 
 std::mutex fileMutex;
 
-void processOptions(const long& fileSize) {
+void processOptions() {
 	Options *options = Options::getInstance();
 	if (-1 == options->querySize) {
-		options->querySize = fileSize;
+		options->querySize = INT64_MAX;
 	}
 	if (options->chunksMaxCount == -1) {
 		options->chunksMaxCount = options->querySize / options->chunkSize;
@@ -107,34 +87,35 @@ void showUsage(const char *arg0) {
 									  "\t-c :\tChunk size (${CHUNK_SIZE}).\n"
 									  "\t-h :\tShow this help.\n"
 									  "\t-i :\tSource to read from. If \"-\" is given it reads from standard input (${SOURCE}).\n"
-									  "\t-j :\tNumber of jobs to run (${JOBS}).\n"
 									  "\t-n :\tNumber of chunks to read (${COUNT}).\n"
-									  "\t-o :\tDestination to write to. If \"-\" is given it writes to standard output (${DESTINATION}).\n"
 									  "\t-P :\tDo not show progress.\n"
 									  "\t-s :\tSize to read (${REQUEST_SIZE}).\n"
 									  "\t-t :\tTimeout in seconds (${TIMEOUT_S}).\n"
 									  "\t-w :\tWaiting time in milliseconds (${WAITING_TIME_MS}).\n";
-
 }
 
-std::string humanize(const double& size) {
-	std::vector<std::string> units {"B", "KiB", "MiB", "GiB", "TiB", "PiB",
-									"EiB", "ZiB", "YiB"};
-	long order = (size > 0) ? (long) (log2(size) / 10) : 0;
-	std::stringstream stringBuilder;
-	stringBuilder << std::fixed << std::setprecision(2)
-				  << size / (1 << (order * 10)) << " "
-				  << units[order];
+struct HumanReadable {
+	double size{};
+	std::string suffix;
 
-	return stringBuilder.str();
-}
+	explicit HumanReadable(double size_, std::string suffix_ = "") : size{size_}, suffix{std::move(suffix_)} {};
+private:
+	friend
+	std::ostream &operator<<(std::ostream &os, const HumanReadable& hr) {
+		long order = (hr.size > 0) ? (long) (log2(hr.size) / 10) : 0;
+		os << std::fixed << std::setprecision(2)
+		   << hr.size / (1 << (order * 10)) << "BKMGTPE"[order];
+		return order == 0 ? os : os << "iB" << hr.suffix
+									<< " (" << std::setprecision(0) << hr.size << ')';
+	}
+};
 
 double readNumber(const std::string &number) {
 	char *endPtr;
 	return strtod(number.c_str(), &endPtr);
 }
 
-long dehumanize(const std::string& number) {
+long dehumanize(const std::string &number) {
 	long result;
 	result = long(readNumber(number));
 	std::smatch sm;
@@ -150,41 +131,25 @@ long dehumanize(const std::string& number) {
 	return result;
 }
 
-long fileLength(std::ifstream &fs) {
-	std::lock_guard<std::mutex> lock(fileMutex);
-	long currentPos = fs.tellg();
-	fs.seekg(0, std::ifstream::end);
-	long length = fs.tellg();
-	fs.seekg(currentPos, std::ifstream::beg);
-
-	return length;
-}
-
 #define TO_NANOSECONDS(duration) std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count()
 
-bool fileCopy(std::ostream &statsOutput) {
+bool fileRead() {
 	using Clock = std::chrono::high_resolution_clock;
 	using TimePoint = Clock::time_point;
 
 	Options *options = Options::getInstance();
-	Stats *stats = Stats::getInstance(statsOutput);
 	bool result = false;
 	std::vector<char> buffer(options->chunkSize);
 	std::ifstream ifs(options->source, std::ifstream::binary);
 
 	if (ifs) {
-		long fileSize = fileLength(ifs);
-		processOptions(fileSize);
 		long totalRead = 0;
 		std::ofstream ofs(options->destination, std::ofstream::binary);
 		if (ofs) {
-			long offset = 0;
 			long chunksCount = 0;
 			double totalElapsed = 0;
 			double totalReadingElapsed = 0;
-			double totalWritingElapsed = 0;
 			TimePoint start;
-			TimePoint writeEnd;
 			TimePoint grossEnd;
 			TimePoint readEnd;
 			long bytesRead;
@@ -192,28 +157,19 @@ bool fileCopy(std::ostream &statsOutput) {
 			do {
 				if (totalElapsed > options->timeoutSeconds ||
 					chunksCount++ > options->chunksMaxCount) {
+					result = true;
 					break;
 				}
 
 				start = Clock::now();
 				{
 					std::lock_guard<std::mutex> lock(fileMutex);
-					{
-						ifs.seekg(offset, std::ifstream::beg);
-						ifs.read(buffer.data(), options->chunkSize);
-						readEnd = Clock::now();
-						bytesRead = ifs.gcount();
-					}
-					{
-						ofs.seekp(offset, std::ofstream::beg);
-						ofs.write(buffer.data(), bytesRead);
-						ofs.flush();
-					}
+					ifs.read(buffer.data(), options->chunkSize);
+					readEnd = Clock::now();
+					bytesRead = ifs.gcount();
 				}
 
-				writeEnd = Clock::now();
 				totalRead += bytesRead;
-				offset += bytesRead;
 				std::this_thread::sleep_for(std::chrono::milliseconds(options->waitingTimeMilliseconds));
 				grossEnd = Clock::now();
 
@@ -223,29 +179,24 @@ bool fileCopy(std::ostream &statsOutput) {
 				double readingElapsed = double(TO_NANOSECONDS(readEnd - start)) * 1e-9;
 				totalReadingElapsed += readingElapsed;
 
-				double writingElapsed = double(TO_NANOSECONDS(writeEnd - readEnd)) * 1e-9;
-				totalWritingElapsed += writingElapsed;
-
 				if (options->showProgress) {
-					stats->stream << "\r"
-								  << humanize((double) bytesRead)
-								  << " at " << humanize((double) bytesRead / grossElapsed) << "/s "
-								  << "( read: " << humanize((double) bytesRead / readingElapsed) << "/s, "
-								  << "write: " << humanize((double) bytesRead / writingElapsed) << "/s )"
+					options->statsStream << "\r"
+								  << HumanReadable{(double) bytesRead}
+								  << " at " << HumanReadable{(double) bytesRead / grossElapsed, "/s"}
+								  << " (read: " << HumanReadable{(double) bytesRead / readingElapsed, "/s)"}
 								  << std::flush;
 				}
 			} while (ifs && ofs);
 
 			if (options->showProgress) {
-				stats->stream << "\n"
-							  << humanize((double) totalRead)
-							  << " at " << humanize((double) totalRead / totalElapsed) << "/s "
-							  << "( read: " << humanize((double) totalRead / totalReadingElapsed) << "/s, "
-							  << "write: " << humanize((double) totalRead / totalWritingElapsed) << "/s )"
+                options->statsStream << "\n"
+							  << HumanReadable{(double) totalRead}
+							  << " at " << HumanReadable{(double) totalRead / totalElapsed, "/s"}
+							  << " (read: " << HumanReadable{(double) totalRead / totalReadingElapsed, "/s)"}
 							  << std::endl;
 			}
 
-			return fileSize == totalRead;
+			return result;
 		}
 	}
 
@@ -256,7 +207,7 @@ bool parseArguments(int argc, char *argv[]) {
 	Options *options = Options::getInstance();
 	int opt;
 
-	while ((opt = getopt(argc, argv, ":c:hi:j:n:o:Pt:s:w:")) != -1) {
+	while ((opt = getopt(argc, argv, ":c:hi:n:Pt:s:w:")) != -1) {
 		switch (opt) {
 			case 'c':
 				options->chunkSize = dehumanize(optarg);
@@ -271,18 +222,8 @@ bool parseArguments(int argc, char *argv[]) {
 					options->source = optarg;
 				}
 				break;
-			case 'j':
-				readNumber(optarg);
-				break;
 			case 'n':
 				options->chunksMaxCount = long(readNumber(optarg));
-				break;
-			case 'o':
-				if (!strcmp(optarg, "-")) {
-					options->destination = "/dev/stdout";
-				} else {
-					options->destination = optarg;
-				}
 				break;
 			case 's':
 				options->querySize = dehumanize(optarg);
@@ -314,8 +255,9 @@ bool parseArguments(int argc, char *argv[]) {
 
 int main(int argc, char *argv[]) {
 	parseArguments(argc, argv);
+	processOptions();
 
-	if (!fileCopy(std::cout))
+	if (!fileRead())
 		return 1;
 
 	return 0;
