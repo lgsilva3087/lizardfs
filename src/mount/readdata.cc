@@ -116,13 +116,12 @@ static std::atomic<uint32_t> maxRetries;
 static double gBandwidthOveruse;
 
 // producer-consumer
-//static ulong MAX_PRODUCER_RESULTS = 20;
 static pthread_t producerThread;
 static std::mutex gProducerConsumerMutex;
 static std::queue<ConsumerRequest> consumerRequests;
 static std::condition_variable can_produce;
 static std::condition_variable can_consume;
-static std::queue<ConsumerRequest> producerResults;
+static std::unordered_map<int, ConsumerRequest> producerResults;
 
 const unsigned ReadaheadAdviser::kInitWindowSize;
 const unsigned ReadaheadAdviser::kDefaultWindowSizeLimit;
@@ -189,10 +188,7 @@ void* producer(void *args) {
 
 	while (true) {
 		std::unique_lock<std::mutex> lock(gProducerConsumerMutex);
-
-		//fprintf(stdout, "Producer before wait\n");
 		can_produce.wait(lock, [](){return consumerRequests.size();});
-		//fprintf(stdout, "-Producer after wait. Requests: %lu\n", consumerRequests.size());
 
 		ConsumerRequest firstRequest = consumerRequests.front();
 
@@ -212,7 +208,7 @@ void* producer(void *args) {
 			firstRequest.result.inputBuffer().clear();
 		}
 
-		producerResults.push(firstRequest);
+		producerResults.emplace(firstRequest.id, firstRequest);
 		consumerRequests.pop();
 		//fprintf(stdout, "Produced\n");
 
@@ -407,8 +403,8 @@ int read_to_buffer(readrec *rrec, uint64_t current_offset, uint64_t bytes_to_rea
 	return LIZARDFS_STATUS_OK;
 }
 
-static int underruns = 0;
-static std::mutex underrunsMutex;
+/*static int underruns = 0;
+static std::mutex underrunsMutex;*/
 
 int read_data(void *rr, uint64_t offset, uint32_t size, ReadCache::Result &ret) {
 	readrec *rrec = (readrec*)rr;
@@ -426,7 +422,7 @@ int read_data(void *rr, uint64_t offset, uint32_t size, ReadCache::Result &ret) 
 	uint64_t frontOffset = result.frontOffset();
 	uint64_t endOffset = result.endOffset();
 
-	fprintf(stdout, "Diff offset: %lu, Size: %d\n", endOffset - offset, size);
+	//fprintf(stdout, "Diff offset: %lu, Size: %d\n", endOffset - offset, size);
 
 	if (frontOffset <= offset && offset + size <= endOffset) {
 		//fprintf(stdout, "FROM CACHE\n");
@@ -434,14 +430,14 @@ int read_data(void *rr, uint64_t offset, uint32_t size, ReadCache::Result &ret) 
 		return LIZARDFS_STATUS_OK;
 	}
 
-	{
+	/*{
 		std::lock_guard<std::mutex> l(underrunsMutex);
 		++underruns;
 		fprintf(stdout, "\n%d - BUFFER UNDERRUN:\n", underruns);
 	}
 	fprintf(stdout, "Request: offset: %lu, size: %d\n", offset, size);
 	fprintf(stdout, " Cache: (%lu - %lu) size: %lu\n", frontOffset,
-			endOffset, endOffset - frontOffset);
+			endOffset, endOffset - frontOffset);*/
 
 	uint64_t request_offset = result.remainingOffset();
 	uint64_t bytes_to_read_left = std::max<uint64_t>(size, rrec->readahead_adviser.window()) - (request_offset - offset);
@@ -465,8 +461,10 @@ int read_data(void *rr, uint64_t offset, uint32_t size, ReadCache::Result &ret) 
 		});
 		//fprintf(stdout, "Consumer after wait\n");
 
-		if (producerResults.front().id == id) {
-			producerResults.pop();
+		auto resultIt = producerResults.find(id);
+
+		if (resultIt != producerResults.end()) {
+			producerResults.erase(resultIt);
 
 			ret = std::move(result);
 			return LIZARDFS_STATUS_OK;
