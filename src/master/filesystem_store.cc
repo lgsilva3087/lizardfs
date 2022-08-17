@@ -1054,6 +1054,9 @@ int fs_load(FILE *fd, int ignoreflag, uint8_t fver) {
 #endif
 			return -1;
 		}
+#ifndef METARESTORE
+		printSessions();
+#endif
 		lzfs_pretty_syslog_attempt(LOG_INFO, "loading names");
 		fflush(stderr);
 		if (fs_loadedges(fd, ignoreflag) < 0) {
@@ -1102,6 +1105,9 @@ int fs_load(FILE *fd, int ignoreflag, uint8_t fver) {
 #endif
 					return -1;
 				}
+#ifndef METARESTORE
+				printSessions();
+#endif
 			} else if (memcmp(hdr, "EDGE 1.0", 8) == 0) {
 				lzfs_pretty_syslog_attempt(LOG_INFO, "loading names from the metadata file");
 				fflush(stderr);

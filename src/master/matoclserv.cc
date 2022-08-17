@@ -35,6 +35,7 @@
 #include <unistd.h>
 #include <fstream>
 #include <memory>
+#include <unordered_map>
 
 #include "common/cfg.h"
 #include "common/charts.h"
@@ -169,6 +170,17 @@ struct session {
 	      openedfiles(),
 	      next() {
 	}
+
+	int getOpenFilesSize() {
+		int size = 0;
+
+		for (filelist* of = openedfiles, *ofn = NULL; of; of = ofn) {
+			ofn = of->next;
+			size++;
+		}
+
+		return size;
+	}
 };
 
 typedef struct packetstruct {
@@ -239,6 +251,8 @@ static char *ListenHost;
 static char *ListenPort;
 static uint32_t RejectOld;
 static uint32_t SessionSustainTime;
+inline uint32_t SessionOpenFileLimit;
+inline std::unordered_map<uint32_t, uint32_t> SessionsOpenFiles;
 
 static uint32_t gIoLimitsAccumulate_ms;
 static double gIoLimitsRefreshTime;
@@ -833,7 +847,31 @@ int matoclserv_insert_openfile(session* cr,uint32_t inode) {
 	return status;
 }
 
+void printSessions() {
+	for (auto asesdata = sessionshead; asesdata; asesdata=asesdata->next) {
+		lzfs_pretty_syslog(LOG_INFO,"Session: %" PRIu32 ", files: %" PRIu32,
+		                   asesdata->sessionid, asesdata->getOpenFilesSize());
+	}
+}
+
 void matoclserv_add_open_file(uint32_t sessionid,uint32_t inode) {
+	uint32_t openfiles = 1;
+
+	if (SessionsOpenFiles.find(sessionid) != SessionsOpenFiles.end()) {
+		openfiles = SessionsOpenFiles.at(sessionid) + 1;
+		SessionsOpenFiles[sessionid] = openfiles;
+	} else {
+		SessionsOpenFiles.emplace(sessionid, openfiles);
+	}
+
+	// Ignore sessions with huge number of open files
+	if (openfiles > SessionOpenFileLimit) {
+		lzfs_pretty_syslog(LOG_WARNING, "Ignoring session %" PRIu32
+		                   ", with %" PRIu32 " open files.",
+		                   sessionid, openfiles);
+		return;
+	}
+
 	session *asesdata;
 	filelist *ofptr,**ofpptr;
 
@@ -5457,6 +5495,9 @@ int matoclserv_sessionsinit(void) {
 		SessionSustainTime=60;
 		lzfs_pretty_syslog(LOG_WARNING,"SESSION_SUSTAIN_TIME too low (less than minute) - setting this value to one minute");
 	}
+
+	SessionOpenFileLimit = cfg_getuint32("SESSION_OPEN_FILE_LIMIT", 10000);
+
 	return 0;
 }
 
