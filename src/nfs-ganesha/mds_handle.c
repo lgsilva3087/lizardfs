@@ -109,7 +109,7 @@ static nfsstat4 lzfs_fsal_layoutcommit(struct fsal_obj_handle *obj_pub,
 	lzfs_export = container_of(req_ctx->fsal_export, struct lzfs_fsal_export, export);
 	lzfs_hdl = container_of(obj_pub, struct lzfs_fsal_handle, handle);
 
-	rc = liz_cred_getattr(lzfs_export->lzfs_instance, op_ctx->creds, lzfs_hdl->inode, &lzfs_old);
+	rc = liz_cred_getattr(lzfs_export->lzfs_instance, &op_ctx->creds, lzfs_hdl->inode, &lzfs_old);
 	if (rc < 0) {
 		LogCrit(COMPONENT_PNFS, "Error '%s' in attempt to get attributes of file %lli.",
 		        liz_error_string(liz_last_err()), (long long)lzfs_hdl->inode);
@@ -137,7 +137,7 @@ static nfsstat4 lzfs_fsal_layoutcommit(struct fsal_obj_handle *obj_pub,
 	}
 
 	liz_attr_reply_t reply;
-	rc = liz_cred_setattr(lzfs_export->lzfs_instance, op_ctx->creds, lzfs_hdl->inode, &attr, mask,
+	rc = liz_cred_setattr(lzfs_export->lzfs_instance, &op_ctx->creds, lzfs_hdl->inode, &attr, mask,
 	                      &reply);
 
 	if (rc < 0) {

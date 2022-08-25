@@ -254,7 +254,7 @@ static nfsstat4 lzfs_fsal_getdeviceinfo(struct fsal_module *fsal_hdl, XDR *da_ad
 
 	// get the chunk list for file
 	chunk_info = gsh_malloc(LZFS_BIGGEST_STRIPE_COUNT * sizeof(liz_chunk_info_t));
-	rc = liz_cred_get_chunks_info(lzfs_export->lzfs_instance, op_ctx->creds, deviceid->devid, 0,
+	rc = liz_cred_get_chunks_info(lzfs_export->lzfs_instance, &op_ctx->creds, deviceid->devid, 0,
 	                              chunk_info, LZFS_BIGGEST_STRIPE_COUNT, &chunk_count);
 	if (rc < 0) {
 		LogCrit(COMPONENT_PNFS,

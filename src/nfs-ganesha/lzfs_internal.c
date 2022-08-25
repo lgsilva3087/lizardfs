@@ -61,8 +61,8 @@ liz_context_t *lzfs_fsal_create_context(liz_t *instance, struct user_cred *cred)
 	}
 
 	liz_context_t *ctx;
-	uid_t uid = (cred->caller_uid == op_ctx->export_perms->anonymous_uid) ? 0 : cred->caller_uid;
-	gid_t gid = (cred->caller_gid == op_ctx->export_perms->anonymous_gid) ? 0 : cred->caller_gid;
+	uid_t uid = (cred->caller_uid == op_ctx->export_perms.anonymous_uid) ? 0 : cred->caller_uid;
+	gid_t gid = (cred->caller_gid == op_ctx->export_perms.anonymous_gid) ? 0 : cred->caller_gid;
 
 	ctx = liz_create_user_context(uid, gid, 0, 0);
 	if (!ctx) {

@@ -45,11 +45,11 @@ static fsal_staticfsinfo_t default_lizardfs_info = {
 	.link_support = true,
 	.symlink_support = true,
 	.lock_support = true,
-	.lock_support_owner = true,
+    //.lock_support_owner = true,
 	.lock_support_async_block = false,
 	.named_attr = true,
 	.unique_handles = true,
-	.lease_time = {LZFS_LEASE_TIME, 0},
+    //.lease_time = {LZFS_LEASE_TIME, 0},
 	.acl_support = FSAL_ACLSUPPORT_ALLOW | FSAL_ACLSUPPORT_DENY,
 	.cansettime = true,
 	.homogenous = true,
@@ -58,9 +58,9 @@ static fsal_staticfsinfo_t default_lizardfs_info = {
 	.maxwrite = FSAL_MAXIOSIZE,
 	.umask = 0,
 	.auth_exportpath_xdev = false,
-	.xattr_access_rights = 0,
-	.share_support = false,
-	.share_support_owner = false,
+    //.xattr_access_rights = 0,
+    //.share_support = false,
+    //.share_support_owner = false,
 	.pnfs_mds = false,
 	.pnfs_ds = false,
 	.fsal_trace = false,
@@ -70,7 +70,7 @@ static fsal_staticfsinfo_t default_lizardfs_info = {
 
 static struct config_item lzfs_fsal_items[] = {
     CONF_ITEM_MODE("umask", 0, fsal_staticfsinfo_t, umask),
-    CONF_ITEM_MODE("xattr_access_rights", 0, fsal_staticfsinfo_t, xattr_access_rights),
+	//CONF_ITEM_MODE("xattr_access_rights", 0, fsal_staticfsinfo_t, xattr_access_rights),
     CONF_ITEM_BOOL("link_support", true, fsal_staticfsinfo_t, link_support),
     CONF_ITEM_BOOL("symlink_support", true, fsal_staticfsinfo_t, symlink_support),
     CONF_ITEM_BOOL("cansettime", true, fsal_staticfsinfo_t, cansettime),
@@ -146,6 +146,8 @@ static struct config_block lzfs_fsal_export_param_block = {
 static fsal_status_t lzfs_fsal_create_export(struct fsal_module *fsal_hdl, void *parse_node,
                                              struct config_error_type *err_type,
                                              const struct fsal_up_vector *up_ops) {
+	/*GUILLEX*/
+	/*
 	struct lzfs_fsal_export *lzfs_export;
 	fsal_status_t status = fsalstat(ERR_FSAL_NO_ERROR, 0);
 	int rc;
@@ -207,7 +209,7 @@ static fsal_status_t lzfs_fsal_create_export(struct fsal_module *fsal_hdl, void 
 			goto error;
 		}
 
-		/* special case: server_id matches export_id */
+		//special case: server_id matches export_id
 		pds->id_servers = op_ctx->ctx_export->export_id;
 		pds->mds_export = op_ctx->ctx_export;
 		pds->mds_fsal_export = &lzfs_export->export;
@@ -230,7 +232,7 @@ static fsal_status_t lzfs_fsal_create_export(struct fsal_module *fsal_hdl, void 
 
 	// get attributes for root inode
 	liz_attr_reply_t ret;
-	rc = liz_cred_getattr(lzfs_export->lzfs_instance, op_ctx->creds, SPECIAL_INODE_ROOT, &ret);
+	rc = liz_cred_getattr(lzfs_export->lzfs_instance, &op_ctx->creds, SPECIAL_INODE_ROOT, &ret);
 	if (rc < 0) {
 		status = lzfs_fsal_last_err();
 		goto error;
@@ -254,6 +256,10 @@ error:
 	}
 
 	return status;
+	*/
+
+	//BY GUILLEX
+	return fsalstat(ERR_FSAL_NO_ERROR, 0);
 }
 
 static fsal_status_t lzfs_fsal_init_config(struct fsal_module *module_in,
@@ -294,7 +300,7 @@ MODULE_INIT void init(void) {
 	lzfs_module->m_ops.fsal_pnfs_ds_ops = lzfs_fsal_ds_handle_ops_init;
 	lzfs_module->m_ops.create_export = lzfs_fsal_create_export;
 	lzfs_module->m_ops.init_config = lzfs_fsal_init_config;
-	lzfs_module->m_ops.support_ex = lzfs_fsal_support_ex;
+	//lzfs_module->m_ops.support_ex = lzfs_fsal_support_ex;
 	lzfs_fsal_ops_pnfs(&lzfs_module->m_ops);
 }
 

@@ -51,6 +51,8 @@ static void lzfs_int_clear_fileinfo_cache(struct lzfs_fsal_export *lzfs_export, 
  * \see fsal_api.h for more information
  */
 static void lzfs_fsal_ds_handle_release(struct fsal_ds_handle *const ds_pub) {
+	/*GUILLEX*/
+	/*
 	struct lzfs_fsal_export *lzfs_export;
 	struct lzfs_fsal_ds_handle *lzfs_ds;
 
@@ -67,6 +69,7 @@ static void lzfs_fsal_ds_handle_release(struct fsal_ds_handle *const ds_pub) {
 	gsh_free(lzfs_ds);
 
 	lzfs_int_clear_fileinfo_cache(lzfs_export, 5);
+	*/
 }
 
 static nfsstat4 lzfs_int_openfile(struct lzfs_fsal_export *lzfs_export,
@@ -116,6 +119,8 @@ static nfsstat4 lzfs_fsal_ds_handle_read(struct fsal_ds_handle *const ds_hdl,
 	ssize_t nb_read;
 	nfsstat4 nfs_status;
 
+	/*GUILLEX*/
+	/*
 	lzfs_export = container_of(ds_hdl->pds->mds_fsal_export, struct lzfs_fsal_export, export);
 	lzfs_ds = container_of(ds_hdl, struct lzfs_fsal_ds_handle, ds);
 
@@ -138,6 +143,7 @@ static nfsstat4 lzfs_fsal_ds_handle_read(struct fsal_ds_handle *const ds_hdl,
 
 	*supplied_length = nb_read;
 	*end_of_file = (nb_read == 0);
+	*/
 
 	return NFS4_OK;
 }
@@ -159,6 +165,8 @@ static nfsstat4 lzfs_fsal_ds_handle_write(struct fsal_ds_handle *const ds_hdl,
 	ssize_t nb_write;
 	nfsstat4 nfs_status;
 
+	/*GUILLEX*/
+	/*
 	lzfs_export = container_of(ds_hdl->pds->mds_fsal_export, struct lzfs_fsal_export, export);
 	lzfs_ds = container_of(ds_hdl, struct lzfs_fsal_ds_handle, ds);
 
@@ -187,6 +195,7 @@ static nfsstat4 lzfs_fsal_ds_handle_write(struct fsal_ds_handle *const ds_hdl,
 	*written_length = nb_write;
 	*stability_got = (rc < 0) ? UNSTABLE4 : stability_wanted;
 
+	*/
 	return NFS4_OK;
 }
 
@@ -206,6 +215,8 @@ static nfsstat4 lzfs_fsal_ds_handle_commit(struct fsal_ds_handle *const ds_hdl,
 
 	memset(*writeverf, 0, NFS4_VERIFIER_SIZE);
 
+	/*GUILLEX*/
+	/*
 	lzfs_export = container_of(ds_hdl->pds->mds_fsal_export, struct lzfs_fsal_export, export);
 	lzfs_ds = container_of(ds_hdl, struct lzfs_fsal_ds_handle, ds);
 
@@ -228,6 +239,7 @@ static nfsstat4 lzfs_fsal_ds_handle_commit(struct fsal_ds_handle *const ds_hdl,
 		LogMajor(COMPONENT_PNFS, "ds_commit() failed  '%s'", liz_error_string(liz_last_err()));
 		return NFS4ERR_INVAL;
 	}
+	*/
 
 	return NFS4_OK;
 }
@@ -266,6 +278,8 @@ static nfsstat4 lzfs_fsal_ds_write_plus(struct fsal_ds_handle *const ds_hdl,
  * \see fsal_api.h for more information
  */
 static void lzfs_fsal_dsh_ops_init(struct fsal_dsh_ops *ops) {
+	/*GUILLEX*/
+	/*
 	memset(ops, 0, sizeof(struct fsal_dsh_ops));
 
 	ops->release = lzfs_fsal_ds_handle_release;
@@ -274,6 +288,7 @@ static void lzfs_fsal_dsh_ops_init(struct fsal_dsh_ops *ops) {
 	ops->commit = lzfs_fsal_ds_handle_commit;
 	ops->read_plus = lzfs_fsal_ds_read_plus;
 	ops->write_plus = lzfs_fsal_ds_write_plus;
+	*/
 }
 
 /*! \brief Create a FSAL data server handle from a wire handle
@@ -330,15 +345,18 @@ static void lzfs_fsal_pds_release(struct fsal_pnfs_ds *const pds) {
  * \see fsal_api.h for more information
  */
 static nfsstat4 lzfs_fsal_pds_permissions(struct fsal_pnfs_ds *const pds, struct svc_req *req) {
-	op_ctx->export_perms->set = root_op_export_set;
-	op_ctx->export_perms->options = root_op_export_options;
+	op_ctx->export_perms.set = root_op_export_set;
+	op_ctx->export_perms.options = root_op_export_options;
 	return NFS4_OK;
 }
 
 void lzfs_fsal_ds_handle_ops_init(struct fsal_pnfs_ds_ops *ops) {
 	memset(ops, 0, sizeof(struct fsal_pnfs_ds_ops));
 	ops->make_ds_handle = lzfs_fsal_make_ds_handle;
+	/*GUILLEX*/
+	/*
 	ops->fsal_dsh_ops = lzfs_fsal_dsh_ops_init;
 	ops->release = lzfs_fsal_pds_release;
 	ops->permissions = lzfs_fsal_pds_permissions;
+	*/
 }

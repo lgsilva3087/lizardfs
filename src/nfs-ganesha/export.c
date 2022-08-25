@@ -71,7 +71,7 @@ static void lzfs_fsal_release(struct fsal_export *export_hdl) {
  */
 static fsal_status_t lzfs_fsal_lookup_path(struct fsal_export *export_hdl, const char *path,
                                            struct fsal_obj_handle **pub_handle,
-                                           struct attrlist *attrs_out) {
+                                           struct fsal_attrlist *attrs_out) {
 	static const char *root_dir_path = "/";
 
 	struct lzfs_fsal_export *lzfs_export;
@@ -119,7 +119,7 @@ static fsal_status_t lzfs_fsal_lookup_path(struct fsal_export *export_hdl, const
 	}
 
 	liz_entry_t result;
-	rc = liz_cred_lookup(lzfs_export->lzfs_instance, op_ctx->creds, SPECIAL_INODE_ROOT, real_path,
+	rc = liz_cred_lookup(lzfs_export->lzfs_instance, &op_ctx->creds, SPECIAL_INODE_ROOT, real_path,
 	                     &result);
 
 	if (rc < 0) {
@@ -178,7 +178,7 @@ static fsal_status_t lzfs_fsal_wire_to_host(struct fsal_export *exp_hdl, fsal_di
  */
 static fsal_status_t lzfs_fsal_create_handle(struct fsal_export *exp_hdl, struct gsh_buffdesc *desc,
                                              struct fsal_obj_handle **pub_handle,
-                                             struct attrlist *attrs_out) {
+                                             struct fsal_attrlist *attrs_out) {
 	struct lzfs_fsal_export *lzfs_export;
 	struct lzfs_fsal_handle *handle = NULL;
 	liz_inode_t *inode;
@@ -194,7 +194,7 @@ static fsal_status_t lzfs_fsal_create_handle(struct fsal_export *exp_hdl, struct
 
 	liz_attr_reply_t result;
 
-	rc = liz_cred_getattr(lzfs_export->lzfs_instance, op_ctx->creds, *inode, &result);
+	rc = liz_cred_getattr(lzfs_export->lzfs_instance, &op_ctx->creds, *inode, &result);
 
 	if (rc < 0) {
 		return lzfs_fsal_last_err();
@@ -324,12 +324,13 @@ static uint32_t lzfs_fsal_fs_maxpathlen(struct fsal_export *exp_hdl) {
  *
  * \see fsal_api.h for more information
  */
-static struct timespec lzfs_fsal_fs_lease_time(struct fsal_export *exp_hdl) {
+/*GUILLEX*/
+/*static struct timespec lzfs_fsal_fs_lease_time(struct fsal_export *exp_hdl) {
 	struct fsal_staticfsinfo_t *info;
 
 	info = lzfs_fsal_staticinfo(exp_hdl->fsal);
 	return fsal_lease_time(info);
-}
+}*/
 
 /*! \brief Get supported ACL types
  *
@@ -411,11 +412,13 @@ void lzfs_fsal_export_ops_init(struct export_ops *ops) {
 	ops->fs_maxlink = lzfs_fsal_fs_maxlink;
 	ops->fs_maxnamelen = lzfs_fsal_fs_maxnamelen;
 	ops->fs_maxpathlen = lzfs_fsal_fs_maxpathlen;
-	ops->fs_lease_time = lzfs_fsal_fs_lease_time;
+	//GUILLEX
+	//ops->fs_lease_time = lzfs_fsal_fs_lease_time;
 	ops->fs_acl_support = lzfs_fsal_fs_acl_support;
 	ops->fs_supported_attrs = lzfs_fsal_fs_supported_attrs;
 	ops->fs_umask = lzfs_fsal_fs_umask;
-	ops->fs_xattr_access_rights = lzfs_fsal_fs_xattr_access_rights;
+	//GUILLEX
+	//ops->fs_xattr_access_rights = lzfs_fsal_fs_xattr_access_rights;
 	ops->alloc_state = lzfs_fsal_alloc_state;
 	ops->free_state = lzfs_fsal_free_state;
 
