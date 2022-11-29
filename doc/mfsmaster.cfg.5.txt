@@ -178,6 +178,9 @@ When balancing disk usage, allow moving chunks between servers with different la
 Reject **mfsmount**s older than 1.6.0 (0 or 1, default is 0). Note that *mfsexports* access control
 is NOT used for those old clients.
 
+*REJECT_NO_ACL_CLIENTS*::
+Reject clients with no explicit ACL support (0 or 1, default is 0).
+
 *GLOBALIOLIMITS_FILENAME*::
 Configuration of global I/O limits (default is no I/O limiting)
 

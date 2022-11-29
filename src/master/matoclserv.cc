@@ -238,6 +238,7 @@ static int exiting,starting;
 static char *ListenHost;
 static char *ListenPort;
 static uint32_t RejectOld;
+static uint32_t RejectNoACLClients;
 static uint32_t SessionSustainTime;
 
 static uint32_t gIoLimitsAccumulate_ms;
@@ -1638,7 +1639,8 @@ void matoclserv_fuse_register(matoclserventry *eptr,const uint8_t *data,uint32_t
 		}
 		eptr->registered = (tools) ? ClientState::kOldTools : ClientState::kRegistered;
 		return;
-	} else if (memcmp(data,FUSE_REGISTER_BLOB_ACL,64)==0) {
+	} else if ((!RejectNoACLClients && memcmp(data,FUSE_REGISTER_BLOB_ACL,64)==0)
+	           || memcmp(data,FUSE_REGISTER_BLOB_ACL2,64)==0) {
 		uint32_t rootinode;
 		uint8_t sesflags;
 		uint8_t mingoal,maxgoal;
@@ -5514,6 +5516,7 @@ void matoclserv_reload(void) {
 	}
 
 	RejectOld = cfg_getuint32("REJECT_OLD_CLIENTS",0);
+	RejectNoACLClients = cfg_getuint32("REJECT_NO_ACL_CLIENTS",0);
 	SessionSustainTime = cfg_getuint32("SESSION_SUSTAIN_TIME",86400);
 	if (SessionSustainTime>7*86400) {
 		SessionSustainTime=7*86400;
@@ -5584,6 +5587,7 @@ int matoclserv_networkinit(void) {
 		ListenPort = cfg_getstr("MATOCU_LISTEN_PORT","9421");
 	}
 	RejectOld = cfg_getuint32("REJECT_OLD_CLIENTS",0);
+	RejectNoACLClients = cfg_getuint32("REJECT_NO_ACL_CLIENTS",0);
 
 	if (matoclserv_iolimits_reload() != 0) {
 		return -1;

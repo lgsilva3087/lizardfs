@@ -186,6 +186,10 @@
 ## (Default is 0)
 # REJECT_OLD_CLIENTS = 0
 
+## Reject clients with no explicit ACL support (Boolean, 0 or 1).
+## (Default is 0)
+# REJECT_NO_ACL_CLIENTS = 0
+
 # GLOBALIOLIMITS_FILENAME = @ETC_PATH@/globaliolimits.cfg
 
 ## How often mountpoints will request bandwidth allocations under constant,

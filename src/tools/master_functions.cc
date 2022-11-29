@@ -52,7 +52,11 @@ static int master_register(int rfd, uint32_t cuid) {
 	wptr = regbuff;
 	put32bit(&wptr, CLTOMA_FUSE_REGISTER);
 	put32bit(&wptr, 73);
+#if defined(ENABLE_ACL_SUPPORT)
+	memcpy(wptr, FUSE_REGISTER_BLOB_ACL2, 64);
+#else
 	memcpy(wptr, FUSE_REGISTER_BLOB_ACL, 64);
+#endif
 	wptr += 64;
 	put8bit(&wptr, REGISTER_TOOLS);
 	put32bit(&wptr, cuid);

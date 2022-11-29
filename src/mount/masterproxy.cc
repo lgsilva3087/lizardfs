@@ -77,7 +77,12 @@ static void* masterproxy_server(void *args) {
 				tcpclose(sock);
 				return NULL;
 			}
+
+#if defined(ENABLE_ACL_SUPPORT)
+			if (memcmp(payload, FUSE_REGISTER_BLOB_ACL2, 64) != 0) {
+#else
 			if (memcmp(payload, FUSE_REGISTER_BLOB_ACL, 64) != 0) {
+#endif
 				tcpclose(sock);
 				return NULL;
 			}

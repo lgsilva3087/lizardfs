@@ -533,7 +533,11 @@ int fs_connect(bool verbose) {
 		wptr = regbuff;
 		put32bit(&wptr,CLTOMA_FUSE_REGISTER);
 		put32bit(&wptr,65);
+#if defined(ENABLE_ACL_SUPPORT)
+		memcpy(wptr,FUSE_REGISTER_BLOB_ACL2,64);
+#else
 		memcpy(wptr,FUSE_REGISTER_BLOB_ACL,64);
+#endif
 		wptr+=64;
 		put8bit(&wptr,REGISTER_GETRANDOM);
 		if (tcptowrite(fd,regbuff,8+65,1000)!=8+65) {
@@ -615,7 +619,11 @@ int fs_connect(bool verbose) {
 			put32bit(&wptr,64+13+ileng+pleng);
 		}
 	}
+#if defined(ENABLE_ACL_SUPPORT)
+	memcpy(wptr,FUSE_REGISTER_BLOB_ACL2,64);
+#else
 	memcpy(wptr,FUSE_REGISTER_BLOB_ACL,64);
+#endif
 	wptr+=64;
 	put8bit(&wptr,(gInitParams.meta)?REGISTER_NEWMETASESSION:REGISTER_NEWSESSION);
 	put16bit(&wptr,LIZARDFS_PACKAGE_VERSION_MAJOR);
@@ -900,7 +908,11 @@ void fs_reconnect() {
 	wptr = regbuff;
 	put32bit(&wptr,CLTOMA_FUSE_REGISTER);
 	put32bit(&wptr,73);
+#if defined(ENABLE_ACL_SUPPORT)
+	memcpy(wptr,FUSE_REGISTER_BLOB_ACL2,64);
+#else
 	memcpy(wptr,FUSE_REGISTER_BLOB_ACL,64);
+#endif
 	wptr+=64;
 	put8bit(&wptr,REGISTER_RECONNECT);
 	put32bit(&wptr,sessionid);
@@ -967,7 +979,11 @@ void fs_close_session(void) {
 	wptr = regbuff;
 	put32bit(&wptr,CLTOMA_FUSE_REGISTER);
 	put32bit(&wptr,69);
+#if defined(ENABLE_ACL_SUPPORT)
+	memcpy(wptr,FUSE_REGISTER_BLOB_ACL2,64);
+#else
 	memcpy(wptr,FUSE_REGISTER_BLOB_ACL,64);
+#endif
 	wptr+=64;
 	put8bit(&wptr,REGISTER_CLOSESESSION);
 	put32bit(&wptr,sessionid);

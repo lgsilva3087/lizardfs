@@ -721,7 +721,17 @@ enum class SugidClearMode {
 // MATOCL:
 //  status:8
 
+// The ENABLE_ACL_SUPPORT CMake option controls which BLOB is sent to master
+// in the connection step.
 #define FUSE_REGISTER_BLOB_ACL         "DjI1GAQDULI5d2YjA26ypc3ovkhjvhciTQVx3CS4nYgtBoUcsljiVpsErJENHaw0"
+// Windows Clients with No ACL support and previous Linux Clients
+// will still send this BLOB.
+// Master will only allow the connecion of these "old" clients if the
+// configuration of REJECT_NO_ACL_CLIENTS is 0 in mfsmaster.cfg.
+
+#define FUSE_REGISTER_BLOB_ACL2        "kFMB1RPTtKL8GKGivwOVLRbwycTeLqEDTg1hjwHRG2mOKlLrT1zt1M012PNmTFBj"
+// New Clients must send this BLOB if built with ACL support.
+// Linux clients are always built with ACL support (even for Active Directory).
 
 #define REGISTER_GETRANDOM 1
 // rcode==1: generate random blob

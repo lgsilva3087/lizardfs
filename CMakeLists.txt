@@ -40,6 +40,8 @@ option(USE_LEGACY_READ_MESSAGES "Enable sending old type of messages by mount"  
 option(ENABLE_NFS_GANESHA       "Enable nfs-ganesha plugin"                              OFF)
 option(ENABLE_CCACHE            "Enable ccache during compilation"                       ON)
 
+# On Windows replaces the ENABLE_AD_SUPPORT option
+option(ENABLE_ACL_SUPPORT       "Enable ACL support in the clients"                      ON)
 
 find_program(CCACHE_FOUND ccache)
 message(STATUS "ENABLE_CCACHE: ${ENABLE_CCACHE}")
@@ -121,6 +123,7 @@ message(STATUS "ENABLE_CRC: ${ENABLE_CRC}")
 message(STATUS "ENABLE_REQUEST_LOG: ${ENABLE_REQUEST_LOG}")
 message(STATUS "USE_LEGACY_READ_MESSAGES: ${USE_LEGACY_READ_MESSAGES}")
 message(STATUS "ENABLE_NFS_GANESHA: ${ENABLE_NFS_GANESHA}")
+message(STATUS "ENABLE_ACL_SUPPORT: ${ENABLE_ACL_SUPPORT}")
 
 execute_process(COMMAND "git" "rev-parse" "HEAD"
   OUTPUT_VARIABLE GIT_SHA1 RESULT_VARIABLE GIT_SHA1_RETURN_VALUE
